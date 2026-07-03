@@ -1,32 +1,59 @@
-# IPHunter 🎯  
-_Automatic Subnet Detection & Network Scanner (Python + Nmap)_
+# IPHunter
 
-## 📖 Overview
-**IPHunter** is a Python tool that:
-- Automatically detects your **current WiFi/LAN subnet**  
-- Runs a **ping sweep** using `nmap`  
-- Collects **IP, MAC, latency, and vendor details**  
-- Displays results in a clean, readable **table format**
+IPHunter scans your local subnet with `nmap`, detects active hosts, and shows IP, latency, MAC, and vendor details.
 
-Useful for:
-- Finding devices connected to your WiFi  
-- Identifying unknown devices on your network  
-- Quick local network inventory  
+## Features
 
----
+- Auto-detects the current Wi-Fi/LAN subnet
+- CLI scanner for scripting and terminal use
+- Desktop GUI for macOS and Windows using Tkinter
+- Parses and displays IP, MAC, latency, and vendor/device data
 
-## ⚡ Features
-- ✅ Auto-detects active subnet (no need to hardcode)  
-- ✅ Clean tabular output using `tabulate`  
-- ✅ Shows MAC address & vendor if available  
-- ✅ Works on Linux, macOS, and Windows (with Nmap installed)  
-- 🚀 Optional: Save results to CSV/JSON (coming soon)  
+## Requirements
 
----
+- Python 3.9+
+- `nmap` installed and available on `PATH`
+- `sudo` access on macOS/Linux when required by your local `nmap` setup
 
-## 🛠 Installation
+## Install
 
-### 1. Clone this repo
 ```bash
 git clone https://github.com/01himanshugautam/IPHunter
 cd IPHunter
+python -m pip install -r requirements.txt
+```
+
+Install `nmap` separately:
+
+- macOS: `brew install nmap`
+- Windows: install from `https://nmap.org/download.html` and ensure `nmap` is on `PATH`
+
+## Run the CLI
+
+```bash
+python main.py
+python main.py --subnet 192.168.1.0/24
+```
+
+## Run the GUI
+
+```bash
+python gui.py
+```
+
+The GUI lets you detect the current subnet, start a scan, and review results in a desktop table.
+
+## Build Desktop Binaries
+
+Use PyInstaller on each target OS:
+
+```bash
+pyinstaller --noconfirm --windowed --name IPHunter gui.py
+```
+
+Output:
+
+- macOS app bundle: `dist/IPHunter.app`
+- Windows executable: `dist/IPHunter/IPHunter.exe`
+
+Build macOS binaries on macOS and Windows binaries on Windows. PyInstaller does not cross-compile between them.
