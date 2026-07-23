@@ -6,6 +6,13 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+function Assert-CommandSucceeded {
+    param([Parameter(Mandatory = $true)][string]$Step)
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Step failed with exit code $LASTEXITCODE."
+    }
+}
+
 if ($env:OS -ne "Windows_NT") {
     throw "This script must run on Windows."
 }
@@ -22,9 +29,11 @@ Write-Host "==> Preparing Windows Python environment" -ForegroundColor Cyan
 if (-not (Test-Path $VenvPython)) {
     if (Get-Command py -ErrorAction SilentlyContinue) {
         & py -3 -m venv $VenvDir
+        Assert-CommandSucceeded "Creating the Python virtual environment"
     }
     elseif (Get-Command python -ErrorAction SilentlyContinue) {
         & python -m venv $VenvDir
+        Assert-CommandSucceeded "Creating the Python virtual environment"
     }
     else {
         throw "Python 3 was not found. Install it from https://www.python.org/downloads/windows/"
@@ -32,7 +41,9 @@ if (-not (Test-Path $VenvPython)) {
 }
 
 & $VenvPython -m pip install --upgrade pip
+Assert-CommandSucceeded "Upgrading pip"
 & $VenvPython -m pip install --requirement requirements.txt
+Assert-CommandSucceeded "Installing Python dependencies"
 
 Write-Host "==> Building IPHunter.exe" -ForegroundColor Cyan
 & $VenvPython -m PyInstaller `
@@ -42,6 +53,7 @@ Write-Host "==> Building IPHunter.exe" -ForegroundColor Cyan
     --windowed `
     --name IPHunter `
     gui.py
+Assert-CommandSucceeded "Building IPHunter.exe"
 
 $PortableExe = Join-Path $ProjectDir "dist\IPHunter.exe"
 if (-not (Test-Path $PortableExe)) {
@@ -59,10 +71,16 @@ if (-not $Iscc -and -not $SkipToolInstall) {
     Write-Host "==> Installing Inno Setup" -ForegroundColor Cyan
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         & winget install --id JRSoftware.InnoSetup --exact `
-            --accept-package-agreements --accept-source-agreements --silent
+            --source winget `
+            --accept-package-agreements `
+            --accept-source-agreements `
+            --disable-interactivity `
+            --silent
+        Assert-CommandSucceeded "Installing Inno Setup with WinGet"
     }
     elseif (Get-Command choco -ErrorAction SilentlyContinue) {
         & choco install innosetup --yes --no-progress
+        Assert-CommandSucceeded "Installing Inno Setup with Chocolatey"
     }
     else {
         throw "Install Inno Setup 6 from https://jrsoftware.org/isdl.php and run this script again."
@@ -76,6 +94,7 @@ if (-not $Iscc) {
 
 Write-Host "==> Building IPHunter-Setup.exe" -ForegroundColor Cyan
 & $Iscc $InstallerScript
+Assert-CommandSucceeded "Building IPHunter-Setup.exe"
 
 if (-not (Test-Path $InstallerOutput)) {
     throw "Inno Setup did not create $InstallerOutput"
