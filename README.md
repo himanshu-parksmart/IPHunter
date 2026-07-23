@@ -13,7 +13,11 @@ IPHunter scans your local subnet with `nmap`, detects active hosts, and shows IP
 
 - Python 3.9+
 - `nmap` installed and available on `PATH`
-- `sudo` access on macOS/Linux when required by your local `nmap` setup
+
+IPHunter runs `nmap` without `sudo`, so neither the GUI nor CLI asks for an
+administrator password. It enriches scan results from the operating system's
+ARP/neighbor cache and resolves vendors with nmap's local MAC-prefix database.
+Devices using private/randomized MAC addresses are identified as such.
 
 ## Install
 
@@ -25,8 +29,12 @@ python -m pip install -r requirements.txt
 
 Install `nmap` separately:
 
-- macOS: `brew install nmap`
+- macOS with Homebrew Python 3.13: `brew install nmap python-tk@3.13`
 - Windows: install from `https://nmap.org/download.html` and ensure `nmap` is on `PATH`
+
+Use the `python-tk` formula matching your Homebrew Python version (for example,
+`python-tk@3.12` for Python 3.12). Tkinter is part of Python's standard library,
+but Homebrew ships its native Tk runtime as a separate formula.
 
 ## Run the CLI
 
@@ -41,7 +49,12 @@ python main.py --subnet 192.168.1.0/24
 python gui.py
 ```
 
-The GUI lets you detect the current subnet, start a scan, and review results in a desktop table.
+The desktop dashboard lets you:
+
+- Detect or enter a subnet and follow the scan state in real time
+- Review active-host and identified-vendor totals at a glance
+- Search devices by IP, MAC address, status, latency, or vendor
+- Sort results by any column and export the full scan to CSV
 
 ## Build Desktop Binaries
 
@@ -57,3 +70,27 @@ Output:
 - Windows executable: `dist/IPHunter/IPHunter.exe`
 
 Build macOS binaries on macOS and Windows binaries on Windows. PyInstaller does not cross-compile between them.
+
+### macOS installer
+
+On an Apple Silicon Mac, build the application and drag-to-install disk image:
+
+```bash
+./scripts/build_macos_dmg.sh
+```
+
+The installer is created at `dist/IPHunter-macOS-arm64.dmg`. Open it and drag
+IPHunter into the Applications folder. This local build is ad-hoc signed; public
+distribution additionally requires an Apple Developer ID signature and notarization.
+
+### Windows installer with GitHub Actions
+
+The included `Build Windows installer` workflow creates an installer on a
+Windows runner:
+
+1. Push this repository to GitHub.
+2. Open **Actions → Build Windows installer → Run workflow**.
+3. When the run finishes, download the **IPHunter-Windows-Installer** artifact.
+
+The installation file is `IPHunter-Setup.exe`. Windows machines still need nmap
+installed when running IPHunter.
