@@ -94,3 +94,19 @@ Windows runner:
 
 The installation file is `IPHunter-Setup.exe`. Windows machines still need nmap
 installed when running IPHunter.
+
+### Build the installer directly on Windows
+
+From Command Prompt in the project directory:
+
+```bat
+scripts\build_windows_installer.bat
+```
+
+The script creates a dedicated `.venv-windows` environment, installs the
+required Python packages, builds the application, installs Inno Setup through
+WinGet or Chocolatey when necessary, and creates:
+
+```text
+installer-output\IPHunter-Setup.exe
+```

@@ -8,6 +8,7 @@ venv/
 ENV/
 env/
 .venv/
+.venv-windows/
 
 # IDE settings
 .vscode/
@@ -24,6 +25,7 @@ Thumbs.db
 *.egg-info/
 dist/
 build/
+installer-output/
 
 # Test / coverage reports
 .coverage
