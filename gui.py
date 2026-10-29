@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import csv
 import ipaddress
+import sys
 import threading
 import tkinter as tk
 import webbrowser
@@ -40,7 +41,8 @@ class IPHunterApp:
         self.root.configure(bg=self.COLORS["canvas"])
 
         self.subnet_var = tk.StringVar(value=get_current_subnet() or "")
-        self.ssid_var = tk.StringVar(value=get_connected_ssid() or "Not connected to Wi-Fi")
+        connected_ssid = get_connected_ssid()
+        self.ssid_var = tk.StringVar(value=f"Wi-Fi: {connected_ssid}" if connected_ssid else "Wi-Fi: Not connected")
         self.status_var = tk.StringVar(value="Ready to scan")
         self.status_detail_var = tk.StringVar(value="Enter a subnet or use the detected network")
         self.search_var = tk.StringVar()
@@ -276,18 +278,19 @@ class IPHunterApp:
         search_entry.pack(side="left", ipady=8, padx=(0, 9))
         search_entry.insert(0, "")
 
-        columns = ("ip", "status", "latency", "mac", "vendor")
+        columns = ("ip", "hostname", "status", "latency", "mac", "vendor")
         table_shell = tk.Frame(panel, bg=self.COLORS["panel"])
         table_shell.pack(fill="both", expand=True)
         self.tree = ttk.Treeview(table_shell, columns=columns, show="headings", style="IPHunter.Treeview")
         headings = {
             "ip": "IP ADDRESS",
+            "hostname": "DEVICE NAME",
             "status": "STATUS",
             "latency": "LATENCY",
             "mac": "MAC ADDRESS",
             "vendor": "VENDOR / DEVICE",
         }
-        widths = {"ip": 155, "status": 105, "latency": 120, "mac": 180, "vendor": 310}
+        widths = {"ip": 135, "hostname": 170, "status": 85, "latency": 95, "mac": 165, "vendor": 240}
         for key in columns:
             self.tree.heading(key, text=headings[key], command=lambda col=key: self.sort_by(col))
             self.tree.column(key, width=widths[key], minwidth=80, anchor="w", stretch=key == "vendor")
@@ -317,7 +320,7 @@ class IPHunterApp:
     def detect_subnet(self):
         subnet = get_current_subnet()
         ssid = get_connected_ssid()
-        self.ssid_var.set(ssid or "Not connected to Wi-Fi")
+        self.ssid_var.set(f"Wi-Fi: {ssid}" if ssid else "Wi-Fi: Not connected")
         if subnet:
             self.subnet_var.set(subnet)
             self.status_var.set("Subnet detected")
@@ -356,14 +359,20 @@ class IPHunterApp:
 
     def _scan_worker(self, subnet):
         try:
-            scanned_subnet, hosts = scan_network(subnet)
-            self.root.after(0, self._scan_complete, scanned_subnet, hosts)
+            scanned_subnet, hosts = scan_network(
+                subnet,
+                privileged=sys.platform == "darwin",
+                native_authorization=sys.platform == "darwin",
+            )
+            ssid = get_connected_ssid(native_authorization=sys.platform == "darwin")
+            self.root.after(0, self._scan_complete, scanned_subnet, hosts, ssid)
         except Exception as exc:
             self.root.after(0, self._scan_failed, str(exc))
 
-    def _scan_complete(self, subnet, hosts):
+    def _scan_complete(self, subnet, hosts, ssid=None):
         self.all_hosts = hosts
         self.subnet_var.set(subnet)
+        self.ssid_var.set(f"Wi-Fi: {ssid}" if ssid else "Wi-Fi: Unavailable")
         self.host_count_var.set(str(len(hosts)))
         vendors = {host["vendor"] for host in hosts if host["vendor"] not in ("N/A", "Unknown")}
         self.vendor_count_var.set(str(len(vendors)))
@@ -401,7 +410,7 @@ class IPHunterApp:
 
     def _show_empty_state(self, title, detail):
         self._clear_rows()
-        self.tree.insert("", "end", values=(title, "", detail, "", ""), tags=("empty",))
+        self.tree.insert("", "end", values=(title, "", "", detail, "", ""), tags=("empty",))
 
     def _render_hosts(self):
         self._clear_rows()
@@ -428,7 +437,7 @@ class IPHunterApp:
             self.tree.insert(
                 "",
                 "end",
-                values=(host["ip"], status, host["latency"], host["mac"], host["vendor"]),
+                values=(host["ip"], host.get("hostname", "N/A"), status, host["latency"], host["mac"], host["vendor"]),
                 tags=(row_tag,),
             )
 
@@ -468,7 +477,7 @@ class IPHunterApp:
             return
         try:
             with open(path, "w", newline="", encoding="utf-8") as csv_file:
-                writer = csv.DictWriter(csv_file, fieldnames=("ip", "status", "latency", "mac", "vendor"))
+                writer = csv.DictWriter(csv_file, fieldnames=("ip", "hostname", "status", "latency", "mac", "vendor"))
                 writer.writeheader()
                 writer.writerows(self.all_hosts)
             self.status_var.set("Export complete")

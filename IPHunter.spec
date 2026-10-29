@@ -51,5 +51,6 @@ app = BUNDLE(
         'CFBundleShortVersionString': '1.0.0',
         'CFBundleVersion': '1',
         'NSHighResolutionCapable': True,
+        'NSLocationWhenInUseUsageDescription': 'IPHunter uses location access only to read the connected Wi-Fi network name.',
     },
 )

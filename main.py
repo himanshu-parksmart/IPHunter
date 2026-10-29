@@ -2,6 +2,7 @@
 import argparse
 from functools import lru_cache
 import ipaddress
+import os
 from pathlib import Path
 import re
 import shutil
@@ -38,7 +39,22 @@ def parse_windows_ssid(output):
     return match.group(1) if match else None
 
 
-def get_connected_ssid():
+def parse_macos_ssid(output):
+    """Extract an unredacted SSID from networksetup or privileged wdutil."""
+    patterns = (
+        r"Current Wi-Fi Network:\s*(.+)$",
+        r"^\s*SSID\s*:\s*(.+?)\s*$",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, output, re.MULTILINE | re.IGNORECASE)
+        if match:
+            ssid = match.group(1).strip()
+            if ssid and ssid.lower() != "<redacted>":
+                return ssid
+    return None
+
+
+def get_connected_ssid(native_authorization=False):
     """Return the current Wi-Fi network name, or None when unavailable."""
     if sys.platform == "win32":
         commands = [["netsh", "wlan", "show", "interfaces"]]
@@ -47,7 +63,24 @@ def get_connected_ssid():
         commands = [
             ["networksetup", "-getairportnetwork", "en0"],
             ["networksetup", "-getairportnetwork", "en1"],
+            [
+                "osascript",
+                "-l",
+                "JavaScript",
+                "-e",
+                'ObjC.import("CoreWLAN"); const i=$.CWWiFiClient.sharedWiFiClient.interface; '
+                'i && i.ssid ? ObjC.unwrap(i.ssid) : ""',
+            ],
+            ["sudo", "-n", "/usr/bin/wdutil", "info"],
         ]
+        if native_authorization:
+            commands.append(
+                [
+                    "osascript",
+                    "-e",
+                    'do shell script "/usr/bin/wdutil info" with administrator privileges',
+                ]
+            )
     else:
         commands = [["nmcli", "-t", "-f", "ACTIVE,SSID", "device", "wifi"]]
 
@@ -59,12 +92,13 @@ def get_connected_ssid():
         except (OSError, subprocess.SubprocessError):
             continue
 
-        output = result.stdout.strip()
+        output = f"{result.stdout}\n{result.stderr}".strip()
         if sys.platform == "win32":
             ssid = parse_windows_ssid(output)
         elif sys.platform == "darwin":
-            match = re.search(r"Current Wi-Fi Network:\s*(.+)$", output, re.IGNORECASE)
-            ssid = match.group(1).strip() if match else None
+            ssid = parse_macos_ssid(output)
+            if command[:3] == ["osascript", "-l", "JavaScript"] and output and "Error:" not in output:
+                ssid = output.strip()
         else:
             match = re.search(r"^yes:(.+)$", output, re.MULTILINE | re.IGNORECASE)
             ssid = match.group(1).replace(r"\:", ":").strip() if match else None
@@ -87,15 +121,18 @@ def find_nmap_executable():
     return str(next((path for path in candidates if path.is_file()), "")) or None
 
 
-def build_nmap_command(subnet, executable="nmap"):
-    """Build an unprivileged nmap command that never prompts for a password."""
-    return [executable, "-sn", subnet]
+def build_nmap_command(subnet, executable="nmap", privileged=False):
+    """Build the nmap discovery command, optionally elevating it on macOS."""
+    command = [executable, "-sn", subnet]
+    if privileged and sys.platform == "darwin" and hasattr(os, "geteuid") and os.geteuid() != 0:
+        return ["sudo", "-p", "IPHunter needs administrator access for MAC discovery. Password: ", *command]
+    return command
 
 
 def parse_nmap_output(output):
     """Parse nmap ping-scan output into structured host rows."""
     hosts = []
-    current_ip, latency, mac, vendor = None, None, None, None
+    current_ip, hostname, latency, mac, vendor = None, None, None, None, None
 
     for line in output.splitlines():
         if line.startswith("Nmap scan report for"):
@@ -103,6 +140,7 @@ def parse_nmap_output(output):
                 hosts.append(
                     {
                         "ip": current_ip,
+                        "hostname": hostname or "N/A",
                         "status": "Up",
                         "latency": latency or "N/A",
                         "mac": mac or "N/A",
@@ -113,6 +151,8 @@ def parse_nmap_output(output):
             # Keep only the address so it can be matched with the ARP cache.
             address_match = re.search(r"\(?((?:\d{1,3}\.){3}\d{1,3})\)?\s*$", line)
             current_ip = address_match.group(1) if address_match else line.split()[-1]
+            report_target = line.removeprefix("Nmap scan report for ").strip()
+            hostname = report_target[: report_target.rfind(" (")] if report_target.endswith(f"({current_ip})") else None
             latency, mac, vendor = None, None, None
         elif "Host is up" in line:
             match = re.search(r"\((.*?) latency\)", line)
@@ -126,6 +166,7 @@ def parse_nmap_output(output):
         hosts.append(
             {
                 "ip": current_ip,
+                "hostname": hostname or "N/A",
                 "status": "Up",
                 "latency": latency or "N/A",
                 "mac": mac or "N/A",
@@ -266,6 +307,7 @@ def enrich_hosts_from_neighbors(hosts, subnet=None, neighbors=None):
                 hosts.append(
                     {
                         "ip": ip,
+                        "hostname": "N/A",
                         "status": "Up",
                         "latency": "N/A",
                         "mac": mac,
@@ -284,7 +326,7 @@ def enrich_hosts_from_neighbors(hosts, subnet=None, neighbors=None):
     return hosts
 
 
-def scan_network(subnet=None):
+def scan_network(subnet=None, privileged=False, native_authorization=False):
     """Run a ping scan and return the subnet plus parsed hosts."""
     if not subnet:
         subnet = get_current_subnet()
@@ -301,18 +343,26 @@ def scan_network(subnet=None):
             )
         raise RuntimeError("nmap is not installed or not available on PATH.")
 
-    command = build_nmap_command(subnet, nmap_executable)
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            check=True,
+    command = build_nmap_command(subnet, nmap_executable, privileged=privileged)
+    if native_authorization and privileged and sys.platform == "darwin" and os.geteuid() != 0:
+        # A packaged/windowed app has no terminal in which sudo can prompt.
+        # AppleScript provides the standard macOS administrator dialog instead.
+        apple_script = (
+            "on run argv\n"
+            'set commandText to quoted form of (item 1 of argv) & " -sn " & quoted form of (item 2 of argv)\n'
+            "do shell script commandText with administrator privileges\n"
+            "end run"
         )
+        command = ["osascript", "-e", apple_script, nmap_executable, subnet]
+    try:
+        # Leave sudo's prompt visible for the CLI. The GUI never requests this
+        # path, so its worker cannot block on an invisible password prompt.
+        uses_sudo = command[0] == "sudo"
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=None if uses_sudo else subprocess.PIPE, text=True, check=True)
     except FileNotFoundError as exc:
         raise RuntimeError("Unable to start nmap. Check your installation.") from exc
     except subprocess.CalledProcessError as exc:
-        details = exc.stderr.strip() or exc.stdout.strip() or str(exc)
+        details = (exc.stderr or "").strip() or (exc.stdout or "").strip() or str(exc)
         raise RuntimeError(f"nmap scan failed: {details}") from exc
 
     hosts = parse_nmap_output(result.stdout)
@@ -320,8 +370,8 @@ def scan_network(subnet=None):
 
 
 def print_hosts_table(hosts):
-    headers = ["IP Address", "Status", "Latency", "MAC Address", "Vendor/Device"]
-    rows = [[host["ip"], host["status"], host["latency"], host["mac"], host["vendor"]] for host in hosts]
+    headers = ["IP Address", "Device Name", "Status", "Latency", "MAC Address", "Vendor/Device"]
+    rows = [[host["ip"], host.get("hostname", "N/A"), host["status"], host["latency"], host["mac"], host["vendor"]] for host in hosts]
     print(tabulate(rows, headers=headers, tablefmt="pretty"))
 
 
@@ -331,14 +381,15 @@ def main():
     args = parser.parse_args()
 
     try:
-        subnet, hosts = scan_network(args.subnet)
+        subnet, hosts = scan_network(args.subnet, privileged=sys.platform == "darwin")
     except RuntimeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
     ssid = get_connected_ssid()
-    if ssid:
-        print(f"Wi-Fi network: {ssid}")
+    print(f"Wi-Fi SSID: {ssid or 'Unavailable'}")
+    if not ssid and sys.platform == "darwin":
+        print("SSID access requires Location Services permission for Terminal (or IPHunter).")
     print(f"Scanning subnet: {subnet}\n")
     if hosts:
         print_hosts_table(hosts)

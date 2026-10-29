@@ -15,10 +15,17 @@ IPHunter scans your local subnet with `nmap`, detects active hosts, and shows IP
 - Python 3.9+
 - `nmap` installed and available on `PATH`
 
-IPHunter runs `nmap` without `sudo`, so neither the GUI nor CLI asks for an
-administrator password. It enriches scan results from the operating system's
+On macOS, the GUI uses the standard administrator dialog and the CLI requests
+administrator access in the terminal so Nmap can use ARP discovery and report
+MAC addresses for all responding devices on the local LAN. On other platforms,
+the scan remains unprivileged. It enriches results from the operating system's
 ARP/neighbor cache and resolves vendors with nmap's local MAC-prefix database.
 Devices using private/randomized MAC addresses are identified as such.
+
+On macOS, reading the connected SSID requires **System Settings → Privacy &
+Security → Location Services** to be enabled for Terminal when using the CLI,
+or for IPHunter when using the packaged app. This is a macOS privacy requirement;
+IPHunter does not collect or store location data.
 
 ## Install
 
