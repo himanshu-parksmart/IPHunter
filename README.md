@@ -5,6 +5,7 @@ IPHunter scans your local subnet with `nmap`, detects active hosts, and shows IP
 ## Features
 
 - Auto-detects the current Wi-Fi/LAN subnet
+- Shows the connected Wi-Fi network name (SSID)
 - CLI scanner for scripting and terminal use
 - Desktop GUI for macOS and Windows using Tkinter
 - Parses and displays IP, MAC, latency, and vendor/device data
@@ -93,7 +94,15 @@ Windows runner:
 3. When the run finishes, download the **IPHunter-Windows-Installer** artifact.
 
 The installation file is `IPHunter-Setup.exe`. Windows machines still need nmap
-installed when running IPHunter.
+installed when running IPHunter. When nmap is missing, the installer offers to
+download the official signed Nmap 7.99 installer directly from `nmap.org` and
+run it before IPHunter starts.
+
+To install only the nmap prerequisite manually from the project directory:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install_nmap_windows.ps1
+```
 
 ### Build the installer directly on Windows
 

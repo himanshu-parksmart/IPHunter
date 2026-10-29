@@ -30,10 +30,20 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "..\..\dist\IPHunter.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\scripts\install_nmap_windows.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\IPHunter"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\IPHunter"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch IPHunter"; Flags: nowait postinstall skipifsilent
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install_nmap_windows.ps1"""; Description: "Download and install Nmap 7.99 (required)"; Flags: postinstall waituntilterminated; Check: not NmapInstalled
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch IPHunter"; Flags: nowait postinstall skipifsilent; Check: NmapInstalled
+
+[Code]
+function NmapInstalled: Boolean;
+begin
+  Result :=
+    FileExists(ExpandConstant('{pf32}\Nmap\nmap.exe')) or
+    FileExists(ExpandConstant('{pf64}\Nmap\nmap.exe'));
+end;

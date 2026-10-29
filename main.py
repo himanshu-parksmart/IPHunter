@@ -32,6 +32,47 @@ def get_current_subnet():
     return None
 
 
+def parse_windows_ssid(output):
+    """Extract the connected SSID from ``netsh wlan show interfaces``."""
+    match = re.search(r"^\s*SSID\s*:\s*(.+?)\s*$", output, re.MULTILINE | re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def get_connected_ssid():
+    """Return the current Wi-Fi network name, or None when unavailable."""
+    if sys.platform == "win32":
+        commands = [["netsh", "wlan", "show", "interfaces"]]
+    elif sys.platform == "darwin":
+        # Wi-Fi is normally en0, but can be en1 on Macs with other adapters.
+        commands = [
+            ["networksetup", "-getairportnetwork", "en0"],
+            ["networksetup", "-getairportnetwork", "en1"],
+        ]
+    else:
+        commands = [["nmcli", "-t", "-f", "ACTIVE,SSID", "device", "wifi"]]
+
+    for command in commands:
+        if not shutil.which(command[0]):
+            continue
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            continue
+
+        output = result.stdout.strip()
+        if sys.platform == "win32":
+            ssid = parse_windows_ssid(output)
+        elif sys.platform == "darwin":
+            match = re.search(r"Current Wi-Fi Network:\s*(.+)$", output, re.IGNORECASE)
+            ssid = match.group(1).strip() if match else None
+        else:
+            match = re.search(r"^yes:(.+)$", output, re.MULTILINE | re.IGNORECASE)
+            ssid = match.group(1).replace(r"\:", ":").strip() if match else None
+        if ssid:
+            return ssid
+    return None
+
+
 def find_nmap_executable():
     """Find nmap from PATH or common GUI-app installation locations."""
     path_match = shutil.which("nmap")
@@ -252,6 +293,12 @@ def scan_network(subnet=None):
 
     nmap_executable = find_nmap_executable()
     if not nmap_executable:
+        if sys.platform == "win32":
+            raise RuntimeError(
+                "Nmap is required but was not found. Install it from "
+                "https://nmap.org/download.html, keep the default Npcap and "
+                "'Register Nmap Path' options enabled, then restart IPHunter."
+            )
         raise RuntimeError("nmap is not installed or not available on PATH.")
 
     command = build_nmap_command(subnet, nmap_executable)
@@ -289,6 +336,9 @@ def main():
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
+    ssid = get_connected_ssid()
+    if ssid:
+        print(f"Wi-Fi network: {ssid}")
     print(f"Scanning subnet: {subnet}\n")
     if hosts:
         print_hosts_table(hosts)

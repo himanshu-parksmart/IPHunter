@@ -3,10 +3,11 @@ import csv
 import ipaddress
 import threading
 import tkinter as tk
+import webbrowser
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
-from main import get_current_subnet, scan_network
+from main import get_connected_ssid, get_current_subnet, scan_network
 
 
 class IPHunterApp:
@@ -39,6 +40,7 @@ class IPHunterApp:
         self.root.configure(bg=self.COLORS["canvas"])
 
         self.subnet_var = tk.StringVar(value=get_current_subnet() or "")
+        self.ssid_var = tk.StringVar(value=get_connected_ssid() or "Not connected to Wi-Fi")
         self.status_var = tk.StringVar(value="Ready to scan")
         self.status_detail_var = tk.StringVar(value="Enter a subnet or use the detected network")
         self.search_var = tk.StringVar()
@@ -194,6 +196,15 @@ class IPHunterApp:
             fg=self.COLORS["muted"],
             font=("TkDefaultFont", 9),
         ).grid(row=1, column=0, sticky="w", pady=(3, 10))
+        tk.Label(
+            body,
+            textvariable=self.ssid_var,
+            bg=self.COLORS["blue_soft"],
+            fg=self.COLORS["blue_dark"],
+            padx=10,
+            pady=5,
+            font=("TkDefaultFont", 9, "bold"),
+        ).grid(row=0, column=1, columnspan=2, rowspan=2, sticky="e", pady=(0, 10))
 
         entry_shell = tk.Frame(body, bg=self.COLORS["white"], highlightbackground="#CCD6E4", highlightthickness=1)
         entry_shell.grid(row=2, column=0, sticky="ew", padx=(0, 12))
@@ -305,6 +316,8 @@ class IPHunterApp:
 
     def detect_subnet(self):
         subnet = get_current_subnet()
+        ssid = get_connected_ssid()
+        self.ssid_var.set(ssid or "Not connected to Wi-Fi")
         if subnet:
             self.subnet_var.set(subnet)
             self.status_var.set("Subnet detected")
@@ -367,7 +380,15 @@ class IPHunterApp:
         self.status_dot.configure(fg=self.COLORS["red"])
         self._show_empty_state("Unable to complete scan", error_message)
         self._set_idle()
-        messagebox.showerror("IPHunter", error_message)
+        if "Nmap is required but was not found" in error_message:
+            open_download = messagebox.askyesno(
+                "Nmap required",
+                f"{error_message}\n\nOpen the official Nmap download page now?",
+            )
+            if open_download:
+                webbrowser.open("https://nmap.org/download.html")
+        else:
+            messagebox.showerror("IPHunter", error_message)
 
     def _set_idle(self):
         self.scan_in_progress = False
